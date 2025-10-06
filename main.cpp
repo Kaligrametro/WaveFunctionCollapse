@@ -1,12 +1,16 @@
 #include <iostream>
 #include "WFC.hpp"
-
+#include "BMP_reader.hpp"
 
 int main()
 {
-    std::cout << "Rotation matrix test" << std::endl;
+    const std::string filename = "samples/sample(0).bmp";
+    bmp::Bitmap bmp(filename);
 
-    //WFC<char, 2, 3> wfc();
+    WFC<bmp::Pixel, 2, 7> wfc(bmp.getData(), { bmp.height(), bmp.width() });
+    //wfc.run({ 100,100 });
+    
+    std::cout << "Compilation success!" << std::endl;
 
     return 0;
 }
