@@ -12,6 +12,7 @@
 #include <array>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 
 #include "Permutator.hpp"
 #include "Vector.hpp"
@@ -22,9 +23,15 @@ using wfc::Permutator;
 using wfc::Rotator;
 using wfc::Reflector;
 
-struct Pattern { size_t hash() const; };
 struct Element;
 struct Wave;
+struct Pattern { 
+    // necessary members for hashing
+    Pattern();
+    size_t   hash() const;
+    bool     operator==(const Pattern& other) const;
+    Pattern& operator= (const Pattern& other);
+};
 
 // hashables
 template<> struct std::hash<Pattern> 
@@ -59,6 +66,7 @@ class WFC
         T& value;
         float frequency;
 
+        //ctors
         Pattern() : 
             data{}, 
             value(data[VOL/2]), 
@@ -71,6 +79,7 @@ class WFC
             frequency(0.0f) 
         {}
 
+        // operators
         Pattern& operator=(const Pattern& other)
         {
             this->data      = other.data;
@@ -78,6 +87,12 @@ class WFC
             return *this;
         }
         
+        bool operator==(const Pattern& other) const
+        {
+            return this->hash() == other.hash();
+        }
+
+
         [[nodiscard]] inline size_t hash() const
 		{
 			if (_hash.has_value())
@@ -103,15 +118,14 @@ class WFC
     std::vector<Pattern> patternGeneration(const Vector& pos)
     {
         using Patterns = std::vector<Pattern>;
-        Patterns patterns;
 
-        // Initialize patterns from base image
+        // Grab patterns from base image
         auto generatePatterns = [&](const Vector& pos) -> Patterns 
         {
             return {};
         };
 
-        // Generate permutations
+        // Generate permutations (includes original)
         auto permutePattern = [&](const Pattern& pattern) -> Patterns 
         {            
             auto applyPermutation = [&](const Pattern& pattern, Permutator*    permutator) -> Pattern 
@@ -147,6 +161,19 @@ class WFC
             return out;
         };
     
+        Patterns patterns;
+
+        // generate all pattern permutations
+        const auto basePatterns = generatePatterns(pos);
+        for (const Pattern& pattern : basePatterns)
+        {
+            const auto permutations = permutePattern(pattern);
+            patterns.insert(patterns.end(), permutations.begin(), permutations.end());  // append permutations
+        }
+
+        // calculate frequencies
+        std::unordered_map<Pattern, size_t> frequencyMap;
+
         return {};
     }
 
