@@ -9,8 +9,7 @@ int main()
 
     WFC<bmp::Pixel, 2, 7> wfc(bmp.getData(), { bmp.height(), bmp.width() });
     //wfc.run({ 100,100 });
-    
-    std::cout << "Compilation success!" << std::endl;
 
+    std::cout << "Compilation success!" << std::endl;
     return 0;
 }

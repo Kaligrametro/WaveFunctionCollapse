@@ -1,7 +1,7 @@
 #ifndef WFC_HPP
 #define WFC_HPP
 
-#define DEBUG false
+#define DEBUG true
 #if DEBUG
     #include <iostream>
     #define println(x) std::cout << #x << ": " << x << '\n'
@@ -13,111 +13,43 @@
 #include <optional>
 #include <vector>
 
+#include "Permutator.hpp"
+#include "Vector.hpp"
+#include "math.hpp"
+
+using wfc::pow;
+using wfc::Permutator;
+using wfc::Rotator;
+using wfc::Reflector;
+
 struct Pattern { size_t hash() const; };
 struct Element;
 struct Wave;
 
 // hashables
-template<> struct std::hash<Pattern> {
+template<> struct std::hash<Pattern> 
+{
     std::size_t operator()(const Pattern& p) const noexcept { return p.hash(); }
 };
-
-//template <uint8_t D> constexpr size_t pow(const size_t s, const size_t d);
-template <uint8_t D> struct Vector;
-template <uint8_t D, uint8_t S> struct Rotator;
-template <uint8_t D, uint8_t S> struct Reflector;
-
-constexpr size_t pow(size_t s, size_t d) 
-{
-    for (size_t i = 1; i < d; i++) s *= s;
-    return s;
-}
-
-// dimensional operators
-// 2D
-
-template <> struct Vector<2> {
-    Vector() : x(0), y(0) {}
-    Vector(const int x_, const int y_) : x(x_), y(y_) {}
-    int x, y;
-};
-
-template <uint8_t S> struct Rotator<2, S> 
-{
-    static constexpr size_t VOL = pow(S, 2);
-
-    // returns a 90° rotation position mapping matrix for SxS patterns
-    static constexpr std::array<std::array<uint8_t, VOL>, 3> RotationMatrixes()
-    {
-        std::array<uint8_t, VOL> rotationMatrix = {}, tmp = {};
-        int i = 0;
-        for (int y = 0, y_ = S; y < S; y++, y_--) 
-        for (int x = 0, x1 = 1; x < S; x++, x1++) 
-        {
-            rotationMatrix[i] = (y_ * x1) - 1 + (y * x);
-            i++;
-        }
-
-        // fill with nums
-        tmp = rotationMatrix;
-
-        auto rotate = [rotationMatrix](std::array<uint8_t, VOL> base) 
-        {
-            for (size_t i = 0; i < VOL; i++) 
-                base[i] = base[rotationMatrix[i]];
-            return base;
-        };
-
-        return {
-            rotationMatrix,
-            rotate(tmp),
-            rotate(rotate(tmp))
-        };
-    };
-};
-
-template <uint8_t S> struct Reflector<2, S> 
-{
-    static constexpr size_t VOL = pow(S, 2);
-
-    static constexpr std::array<std::array<uint8_t, VOL>, 3> ReflectorMatrixes()
-    {
-        std::array<uint8_t, VOL> mirrorX  = {};
-        std::array<uint8_t, VOL> mirrorY  = {};
-        std::array<uint8_t, VOL> mirrorXY = {};
-        
-        int i = 0;
-		for (int y = 0; y < S; y++) 
-		for (int x = S; x > 0; x--, i++) 
-            mirrorX[i] = y * S + x - 1;
-		
-        i = 0;
-		for (int y = S; y > 0; y--) 
-		for (int x = 0; x < S; x++, i++) 
-            mirrorY[i] = (y - 1) * S + x;
-
-        i = 0;
-        // TODO: add mirrorXY
-
-        return { mirrorX, mirrorY, mirrorXY };
-    }
-}; 
-
-// 3D
-/* ... */
 
 template <
 	typename T, // T: datatype
 	uint8_t D,  // D: dimension
 	size_t S    // S: pattern size
 > 
+requires (
+    (D == 2 || D == 3) &&   // 2D or 3D only
+    (S % 2 == 1)       &&   // S must be odd
+    (S > 0 && S <= 15)      // S must cannot exceed 15 ( 15*15 = 255 = sizeof(uint8_t) )
+) 
 class WFC
 {
     static constexpr size_t VOL = pow(S, D);
-
-    using Vector = Vector<D>;
-    using Rotator = Rotator<D, S>;
-    using Reflector = Reflector<D, S>;
+    
+    using Vector     = wfc::Vector     <D>;
+    using Permutator = wfc::Permutator <D, S>;
+    using Rotator    = wfc::Rotator    <D, S>;
+    using Reflector  = wfc::Reflector  <D, S>;
 
     struct Element {};
     
@@ -126,6 +58,25 @@ class WFC
         std::array<T, VOL> data;
         T& value;
         float frequency;
+
+        Pattern() : 
+            data{}, 
+            value(data[VOL/2]), 
+            frequency(0.0f) 
+        {}
+
+        Pattern(const std::array<T, VOL>& data) : 
+            data(data), 
+            value(data[VOL/2]), 
+            frequency(0.0f) 
+        {}
+
+        Pattern& operator=(const Pattern& other)
+        {
+            this->data      = other.data;
+            this->frequency = other.frequency;
+            return *this;
+        }
         
         [[nodiscard]] inline size_t hash() const
 		{
@@ -148,19 +99,64 @@ class WFC
     
     std::vector<Pattern> patterns;
 
+    // Generate all possible patterns
+    std::vector<Pattern> patternGeneration(const Vector& pos)
+    {
+        using Patterns = std::vector<Pattern>;
+        Patterns patterns;
+
+        // Initialize patterns from base image
+        auto generatePatterns = [&](const Vector& pos) -> Patterns 
+        {
+            return {};
+        };
+
+        // Generate permutations
+        auto permutePattern = [&](const Pattern& pattern) -> Patterns 
+        {            
+            auto applyPermutation = [&](const Pattern& pattern, Permutator*    permutator) -> Pattern 
+            {
+                Pattern out;
+                auto mask = permutator->getMask();
+
+                for (size_t i = 0; i < VOL; i++) 
+                    out.data[i] = pattern.data[mask[i]];
+
+                return out;
+            };
+
+            // TODO: implement for D == 3
+            static_assert(D == 2, "Permutations are only implemented for 2D patterns.");
+
+            Patterns out(8);
+            Rotator rotator;
+            Reflector reflector;
+            
+            // this amount of permutations is enough to generate all unique rotations/reflections, for reference see ./devguides/PermutationsReduction.png
+
+            out[0] = pattern;                               // 0°
+            out[1] = applyPermutation(out[0],  &rotator);   // 90°
+            out[2] = applyPermutation(out[1],  &rotator);   // 180°
+            out[3] = applyPermutation(out[2],  &rotator);   // 270°
+
+            out[4] = applyPermutation(out[0],  &reflector); // mirror Y 0°
+            out[5] = applyPermutation(out[1],  &reflector); // mirror Y 90°
+            out[6] = applyPermutation(out[2],  &reflector); // mirror Y 180°
+            out[7] = applyPermutation(out[3],  &reflector); // mirror Y 270°
+
+            return out;
+        };
+    
+        return {};
+    }
+
 public:
 
-    WFC(const std::vector<T>& baseImage, const Vector size) 
+    WFC(const std::vector<T>& baseImage, 
+        const Vector size) 
     {
-        auto permutate = [](const Pattern& pattern) 
-        {
-            for (const auto& rot : Rotator::RotationMatrixes())
-            {
-                // apply rotation
-                
-            }
-        };
-        //auto deduplicate = [](const Pattern& patterns) -> std::vector<Pattern> {};
+       this->patterns = patternGeneration(size);
+
     }
 };
 
