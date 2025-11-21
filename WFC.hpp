@@ -4,6 +4,7 @@
 #define DEBUG true
 #if DEBUG
     #include <iostream>
+    #include "BMP_reader.hpp"
     #define println(x) std::cout << #x << ": " << x << '\n'
 #else
     #define println(x)
@@ -12,11 +13,12 @@
 #include <array>
 #include <optional>
 #include <vector>
-#include <unordered_map>
+#include <algorithm>
 
 #include "Permutator.hpp"
 #include "Vector.hpp"
 #include "math.hpp"
+#include "utils.hpp"
 
 using wfc::pow;
 using wfc::Permutator;
@@ -25,19 +27,7 @@ using wfc::Reflector;
 
 struct Element;
 struct Wave;
-struct Pattern { 
-    // necessary members for hashing
-    Pattern();
-    size_t   hash() const;
-    bool     operator==(const Pattern& other) const;
-    Pattern& operator= (const Pattern& other);
-};
-
-// hashables
-template<> struct std::hash<Pattern> 
-{
-    std::size_t operator()(const Pattern& p) const noexcept { return p.hash(); }
-};
+struct Pattern;
 
 template <
 	typename T, // T: datatype
@@ -61,7 +51,7 @@ class WFC
     struct Element {};
     
     struct Pattern {
-        
+    public: 
         std::array<T, VOL> data;
         T& value;
         float frequency;
@@ -69,14 +59,14 @@ class WFC
         //ctors
         Pattern() : 
             data{}, 
-            value(data[VOL/2]), 
-            frequency(0.0f) 
+            value(data[VOL/2]),
+            frequency(0.0f)
         {}
 
         Pattern(const std::array<T, VOL>& data) : 
             data(data), 
-            value(data[VOL/2]), 
-            frequency(0.0f) 
+            value(data[VOL/2]),
+            frequency(0.0f)
         {}
 
         // operators
@@ -87,42 +77,69 @@ class WFC
             return *this;
         }
         
-        bool operator==(const Pattern& other) const
+        bool     operator==(const Pattern& other) const
         {
-            return this->hash() == other.hash();
+            return (hash() == other.hash());
         }
 
-
-        [[nodiscard]] inline size_t hash() const
+        [[nodiscard]] size_t hash() const
 		{
-			if (_hash.has_value())
-				return _hash.value();
+			if (this->_hash.has_value())
+				return this->_hash.value();
 
 			// random shit go!
 			size_t v = 0x89abcdef;
-			for (const T& data : this->data)
+			for (size_t i = 0; i < this->data.size(); i++)
 			{
-				v ^= data + 0x1234 + (v >> 4) + (v << 2);
+				v ^= this->data[i] + 0x1234 + (v >> 4) + (v << 2);
 			}
-			_hash = v;
-			return _hash.value();
+			this->_hash = v;
+			return this->_hash.value();
 		}
-    
+
     private:
-        std::optional<size_t> _hash = std::nullopt;
+        mutable std::optional<size_t> _hash;
     };
-    
+
     std::vector<Pattern> patterns;
 
     // Generate all possible patterns
-    std::vector<Pattern> patternGeneration(const Vector& pos)
+    std::vector<Pattern> patternGeneration(
+        const std::vector<T>& baseImage, 
+        const Vector&         size)
     {
         using Patterns = std::vector<Pattern>;
 
-        // Grab patterns from base image
-        auto generatePatterns = [&](const Vector& pos) -> Patterns 
+        // Grab patterns from base image TODO
+        auto generatePatterns = [&](const std::vector<T>& baseImage, const Vector& size) -> Patterns 
         {
-            return {};
+			auto inBounds = [size](int x, int y) -> bool
+			{
+				return (x + ((int) S) < size.x && y + ((int) S) < size.y);
+			};
+
+			Patterns out;
+
+            // iterate through base image
+			for (int y = 0; y < size.y; y += S - 1) {
+			for (int x = 0; x < size.x; x += S - 1) {
+
+					if (!inBounds(x, y)) continue;
+
+					Pattern	tmp;
+
+					for (int _y = 0; _y < S; _y++) {
+					for (int _x = 0; _x < S; _x++) {
+						int data_index = (x + _x) + ((y + _y) * size.x);
+						int copy_index = _x + _y * S;
+						tmp.data[copy_index] = baseImage[data_index];
+					}
+					}
+
+					out.push_back(tmp);
+				}
+			}
+			return out;
         };
 
         // Generate permutations (includes original)
@@ -139,52 +156,99 @@ class WFC
                 return out;
             };
 
-            // TODO: implement for D == 3
-            static_assert(D == 2, "Permutations are only implemented for 2D patterns.");
-
-            Patterns out(8);
+            Patterns out;
             Rotator rotator;
             Reflector reflector;
             
-            // this amount of permutations is enough to generate all unique rotations/reflections, for reference see ./devguides/PermutationsReduction.png
-
-            out[0] = pattern;                               // 0°
-            out[1] = applyPermutation(out[0],  &rotator);   // 90°
-            out[2] = applyPermutation(out[1],  &rotator);   // 180°
-            out[3] = applyPermutation(out[2],  &rotator);   // 270°
-
-            out[4] = applyPermutation(out[0],  &reflector); // mirror Y 0°
-            out[5] = applyPermutation(out[1],  &reflector); // mirror Y 90°
-            out[6] = applyPermutation(out[2],  &reflector); // mirror Y 180°
-            out[7] = applyPermutation(out[3],  &reflector); // mirror Y 270°
+            switch (D)
+            {
+                case 2:
+                    out.resize(8); // 4 rotations + 4 reflections
+                    out[0] = pattern;                               // 0°
+                    out[1] = applyPermutation(out[0],  &rotator);   // 90°
+                    out[2] = applyPermutation(out[1],  &rotator);   // 180°
+                    out[3] = applyPermutation(out[2],  &rotator);   // 270°
+                    out[4] = applyPermutation(out[0],  &reflector); // mirror Y 0°
+                    out[5] = applyPermutation(out[1],  &reflector); // mirror Y 90°
+                    out[6] = applyPermutation(out[2],  &reflector); // mirror Y 180°
+                    out[7] = applyPermutation(out[3],  &reflector); // mirror Y 270°
+                    break;
+                case 3:
+                    // TODO: implement for D == 3
+                    static_assert(D == 2, "Permutations are only implemented for 2D patterns.");
+                    break;
+            }
 
             return out;
         };
-    
-        Patterns patterns;
-
-        // generate all pattern permutations
-        const auto basePatterns = generatePatterns(pos);
-        for (const Pattern& pattern : basePatterns)
+        
+        // Apply permutations to all patterns
+        auto permuteAllPatterns = [&](const Patterns& patterns) -> Patterns 
         {
-            const auto permutations = permutePattern(pattern);
-            patterns.insert(patterns.end(), permutations.begin(), permutations.end());  // append permutations
-        }
+            Patterns out;
+            for (const Pattern& pattern : patterns)
+            {
+                const auto permutations = permutePattern(pattern);
+                out.insert(out.end(), permutations.begin(), permutations.end());  // append permutations
+            }
+            return out;
+        };
+        
+        // Deduplicate patterns and calculate frequencies   //TODO:FIX
+        auto deduplicate = [&](Patterns patterns) -> Patterns
+        {
+            Patterns out;
+            const float original_size = (float) patterns.size();
+            
+            for (const Pattern& pattern : patterns)
+            {
+                Patterns filtered = wfc::utils::filter<Pattern>(
+                    patterns, [&](const Pattern& p) { return p == pattern; }
+                );
+                
+                // check if already exists in out
+                if (std::find(out.begin(), out.end(), filtered[0]) != out.end())
+                    continue;
 
-        // calculate frequencies
-        std::unordered_map<Pattern, size_t> frequencyMap;
-
-        return {};
+                filtered[0].frequency = (float) (filtered.size() / original_size);
+                out.push_back(filtered[0]); 
+            }
+            
+            return out;
+        };
+        
+        return deduplicate( permuteAllPatterns( generatePatterns(baseImage, size) ) );
     }
+
 
 public:
 
     WFC(const std::vector<T>& baseImage, 
         const Vector size) 
     {
-       this->patterns = patternGeneration(size);
+        this->patterns = patternGeneration(baseImage, size);
+
+        println(this->patterns.size());
 
     }
+
+#if DEBUG
+    static void export_patterns(const std::vector<Pattern>& patterns)
+	{
+		bmp::Bitmap file(S, S);
+		std::string filename;
+		for (size_t i = 0; i < patterns.size(); i++)
+		{
+			auto data = patterns[i].data;
+			file.setCastPixels(std::vector<T>(data.begin(), data.end()));
+			filename = "output/patterns/pattern(" + std::to_string(i) + ").bmp";
+			file.save(filename);
+		}
+		std::cout << "<DEBUG-ONLY> Patterns(" << patterns.size() << ") exported succesfully!\n";
+    }
+#else
+    static void export_patterns(const std::vector<Pattern>& patterns) {}
+#endif
 };
 
 #endif // WFC_HPP
