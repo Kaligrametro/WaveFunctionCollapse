@@ -44,7 +44,7 @@ namespace bmp {
         std::uint8_t g; /* Green value */
         std::uint8_t b; /* Red value */
 
-        constexpr Pixel() noexcept : r(0), g(0), b(0) {}
+        constexpr Pixel() noexcept : r(128), g(128), b(0) {}
 
         explicit constexpr Pixel(const std::int32_t rgb) noexcept :
             r((rgb >> 16) & 0xff),

@@ -14,6 +14,7 @@
 #include <optional>
 #include <vector>
 #include <algorithm>
+#include <utility>
 
 #include "Permutator.hpp"
 #include "Vector.hpp"
@@ -29,10 +30,16 @@ struct Element;
 struct Wave;
 struct Pattern;
 
+enum class STRATEGY {
+    MIN_ENTROPY,
+    RANDOM
+};
+
 template <
 	typename T, // T: datatype
 	uint8_t D,  // D: dimension
-	size_t S    // S: pattern size
+	size_t S,   // S: pattern size
+    size_t N    // N: number of patterns
 > 
 requires (
     (D == 2 || D == 3) &&   // 2D or 3D only
@@ -48,7 +55,27 @@ class WFC
     using Rotator    = wfc::Rotator    <D, S>;
     using Reflector  = wfc::Reflector  <D, S>;
 
-    struct Element {};
+    struct Element {
+        Element() : 
+            _entropy(1.0f), 
+            _isCollapsed(false)
+        {}
+
+        void collapse(const T& value) {
+            this->_value       = value;
+            this->_entropy     = 0.0f;
+            this->_isCollapsed = true;
+        }
+
+        float  getEntropy()  const { return this->_entropy;     }
+        T      getValue()    const { return this->_value;       }
+        bool   isCollapsed() const { return this->_isCollapsed; }
+
+    private:
+        float  _entropy;
+        bool   _isCollapsed;
+        T      _value;
+    };
     
     struct Pattern {
     public: 
@@ -101,7 +128,123 @@ class WFC
         mutable std::optional<size_t> _hash;
     };
 
-    std::vector<Pattern> patterns;
+    struct Wave {
+
+        Wave(const Vector size, WFC& wfc) : 
+            _elements(size.size()),
+            _size(size),
+            _wfc(wfc)
+        {}
+
+        Element& at(const Vector position) 
+        { 
+            size_t index = -1;
+            switch(D)
+            {
+                case 2: index = position.x + position.y * S; 
+                case 3: index = position.x + position.y * S + position.z * S * S;
+            }
+            return _elements.at(index); 
+        }
+
+        void run(std::function<void(const Wave&, int)> callback = [](const Wave&, int) {})
+        {
+            callback(*this, -1);
+
+            for (size_t collapsed = 0; collapsed < _elements.size(); collapsed++)
+            {
+
+                size_t  index   = searchElement(STRATEGY::MIN_ENTROPY);
+                Pattern pattern = searchPattern(STRATEGY::RANDOM);
+
+                collapse(pattern.value, index);
+                propagate(index);
+
+                callback(*this, (int) collapsed);
+            }
+        }
+
+        std::vector<Element> getElements() const { return _elements; }
+        Vector getSize() const { return _size; }
+    
+    private:
+        WFC& _wfc;
+        std::vector<Element> _elements;
+        Vector _size;
+
+        void propagate(const size_t lastCollapsedIndex) 
+        {
+            //const T& value = this->at(lastCollapsedIndex).getValue();
+            //const auto patterns = wfc::utils::filter<Pattern>(_wfc.patterns, [&](const Pattern& p) { return p.value == value; });
+            // TODO
+        }
+
+        // returns index of element with specific search strategy
+        size_t searchElement(STRATEGY strategy)
+        {
+            size_t toCollapseIndex = 0;
+
+            switch (strategy)
+            {
+                case STRATEGY::MIN_ENTROPY:
+                {
+                    /*
+                    collapsedIndex = (size_t) std::distance(
+                        _elements.begin(),
+                        std::min_element(
+                            _elements.begin(),
+                            _elements.end(),
+                            [](const Element& a, const Element& b) { 
+                                if (a.isCollapsed()) return true; 
+                                return a.getEntropy() < b.getEntropy(); 
+                            }
+                        )
+                    );
+                    */
+
+                    // find first non-collapsed element
+                    const auto uncollapsed = std::find_if(_elements.begin(), _elements.end(), [](const Element& e) { return !e.isCollapsed(); });
+
+                    if (uncollapsed == _elements.end())
+                        return _elements.size(); // all collapsed
+
+                    toCollapseIndex = (size_t) std::distance(_elements.begin(), uncollapsed);
+                    println(toCollapseIndex);
+
+                    for (size_t i = 0; i < _elements.size(); i++)
+                    {
+                        if (_elements.at(i).isCollapsed()) continue;
+                        if (_elements.at(i).getEntropy() < _elements.at(toCollapseIndex).getEntropy())
+                        {
+                            toCollapseIndex = i;
+                        }
+                    }
+                }
+                break;
+                case STRATEGY::RANDOM:
+                {
+                    toCollapseIndex = wfc::utils::random(0, _elements.size() - 1);
+                }
+                break;
+            }
+
+            return toCollapseIndex;
+        }
+
+        ;
+        // returns hash of pattern with specific search strategy
+        Pattern searchPattern(STRATEGY strategy) 
+        {
+            return _wfc.patterns[0]; // TODO: implement
+        }
+
+        void collapse(const T& value, size_t collapseIndex)
+        {
+            _elements
+            .at(collapseIndex)
+            .collapse(value);
+        }
+    };
 
     // Generate all possible patterns
     std::vector<Pattern> patternGeneration(
@@ -113,7 +256,7 @@ class WFC
         // Grab patterns from base image TODO
         auto generatePatterns = [&](const std::vector<T>& baseImage, const Vector& size) -> Patterns 
         {
-			auto inBounds = [size](int x, int y) -> bool
+			auto inBounds = [](Vector size, int x, int y) -> bool
 			{
 				return (x + ((int) S) < size.x && y + ((int) S) < size.y);
 			};
@@ -124,7 +267,7 @@ class WFC
 			for (int y = 0; y < size.y; y += S - 1) {
 			for (int x = 0; x < size.x; x += S - 1) {
 
-					if (!inBounds(x, y)) continue;
+					if (!inBounds(size, x, y)) continue;
 
 					Pattern	tmp;
 
@@ -220,19 +363,47 @@ class WFC
         return deduplicate( permuteAllPatterns( generatePatterns(baseImage, size) ) );
     }
 
-
+    std::vector<Pattern> patterns;
 public:
 
     WFC(const std::vector<T>& baseImage, 
-        const Vector size) 
+        const Vector size)
     {
         this->patterns = patternGeneration(baseImage, size);
-
         println(this->patterns.size());
+    }
 
+    // steps:
+    // 1. initialize wave function
+    // 2. observe
+    // 3. propagate
+    void run(const Vector outputSize)
+    {
+        const auto callback = [](const Wave& w, int frame) {
+            exportFrame(w.getElements(), w.getSize(), frame);
+        };
+
+
+        Wave wave(outputSize, *this);
+        wave.run(callback);
     }
 
 #if DEBUG
+    static void exportFrame(const std::vector<Element>& data, const Vector& size, const int frameNumber)
+    {
+        std::string path = "output/frames/frame(" + std::to_string(frameNumber) + ").bmp";
+        bmp::Bitmap file(size.x, size.y);
+
+        std::vector<T> castedData;
+        for (const Element& e : data)
+        {
+            castedData.push_back(e.getValue());
+        }
+        file.setCastPixels(castedData);
+
+        file.save(path);
+    }
+
     static void export_patterns(const std::vector<Pattern>& patterns)
 	{
 		bmp::Bitmap file(S, S);
@@ -248,6 +419,7 @@ public:
     }
 #else
     static void export_patterns(const std::vector<Pattern>& patterns) {}
+    static void exportFrame(const std::vector<T>& data, const Vector& size, const int frameNumber) {}
 #endif
 };
 

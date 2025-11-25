@@ -9,8 +9,8 @@ int main()
     
     const std::string filename = "samples/sample(0).bmp";
     bmp::Bitmap bmp(filename);
-    WFC<bmp::Pixel, 2, 7> wfc(bmp.getData(), { bmp.height(), bmp.width() });
-    ////wfc.run({ 100,100 });
+    WFC<bmp::Pixel, 2, 3, 300> wfc(bmp.getData(), { bmp.height(), bmp.width() });
+    wfc.run({ 10,10 });
 
     return 0;
 }
