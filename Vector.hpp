@@ -2,14 +2,19 @@
 #define VECTOR_HPP
 
 #include <cstdint>
+#include <functional>
+
 namespace wfc 
 {
     template <uint8_t D> struct Vector;
 
-    template <> struct Vector<2> {
-        Vector() : x(0), y(0) {}
-        Vector(const int x_, const int y_) : x(x_), y(y_) {}
+    template <> struct Vector<2> 
+    {
         int x, y;
+
+        Vector() : x(0), y(0) {}
+        //Vector(const int x_, const int y_) : x(x_), y(y_) {}
+        constexpr Vector(const int _x, const int _y) : x(_x), y(_y) {}
 
         void iterate(
             const std::function<void(Vector<2>)>& func, 
@@ -32,9 +37,12 @@ namespace wfc
         }
     };
 
-    template <> struct Vector<3> {
+    template <> struct Vector<3> 
+    {
         Vector() : x(0), y(0), z(0) {}
         Vector(const int x_, const int y_, const int z_) : x(x_), y(y_), z(z_) {}
+        constexpr Vector(const int _x, const int _y) : x(x), y(y) {}
+
         int x, y, z;
 
         void iterate(

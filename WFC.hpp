@@ -15,11 +15,13 @@
 #include <vector>
 #include <algorithm>
 #include <utility>
+#include <bitset>
 
 #include "Permutator.hpp"
 #include "Vector.hpp"
 #include "math.hpp"
 #include "utils.hpp"
+#include "Neighbors.hpp"
 
 using wfc::pow;
 using wfc::Permutator;
@@ -51,30 +53,35 @@ class WFC
     static constexpr size_t VOL = pow(S, D);
     
     using Vector     = wfc::Vector     <D>;
+    using Neighbors  = wfc::Neighbors  <D>;
     using Permutator = wfc::Permutator <D, S>;
     using Rotator    = wfc::Rotator    <D, S>;
     using Reflector  = wfc::Reflector  <D, S>;
 
     struct Element {
         Element() : 
-            _entropy(1.0f), 
-            _isCollapsed(false)
+            _entropy(1.0f)
         {}
 
         void collapse(const T& value) {
             this->_value       = value;
             this->_entropy     = 0.0f;
-            this->_isCollapsed = true;
         }
 
-        float  getEntropy()  const { return this->_entropy;     }
-        T      getValue()    const { return this->_value;       }
-        bool   isCollapsed() const { return this->_isCollapsed; }
+        float  getEntropy()  const { return N - _c.count();           }
+        T      getValue()    const { return _value.value();     }
+        bool   isCollapsed() const { return _value.has_value(); }
+
+        void apply(const std::bitset<N> mask) 
+        {
+            const auto diff = _c & mask;
+            _c = diff;
+        }
 
     private:
-        float  _entropy;
-        bool   _isCollapsed;
-        T      _value;
+        float            _entropy;
+        std::optional<T> _value = std::nullopt;
+        std::bitset<N>   _c;
     };
     
     struct Pattern {
@@ -166,10 +173,11 @@ class WFC
 
         std::vector<Element> getElements() const { return _elements; }
         Vector getSize() const { return _size; }
-    
+
+        std::vector<Element> _elements;
+
     private:
         WFC& _wfc;
-        std::vector<Element> _elements;
         Vector _size;
 
         void propagate(const size_t lastCollapsedIndex) 
@@ -184,48 +192,33 @@ class WFC
         {
             size_t toCollapseIndex = 0;
 
-            switch (strategy)
+            auto MIN_ENTROPY_FN = [](const Wave& w) -> size_t 
             {
-                case STRATEGY::MIN_ENTROPY:
+                size_t out = (size_t) std::distance(
+                    w._elements.begin(), 
+                    std::find_if(
+                        w._elements.begin(), 
+                        w._elements.end(), 
+                        [](const Element& e) { return !e.isCollapsed(); }
+                    )
+
+                );
+
+                for (size_t i = 0; i < w._elements.size(); i++)
                 {
-                    /*
-                    collapsedIndex = (size_t) std::distance(
-                        _elements.begin(),
-                        std::min_element(
-                            _elements.begin(),
-                            _elements.end(),
-                            [](const Element& a, const Element& b) { 
-                                if (a.isCollapsed()) return true; 
-                                return a.getEntropy() < b.getEntropy(); 
-                            }
-                        )
-                    );
-                    */
-
-                    // find first non-collapsed element
-                    const auto uncollapsed = std::find_if(_elements.begin(), _elements.end(), [](const Element& e) { return !e.isCollapsed(); });
-
-                    if (uncollapsed == _elements.end())
-                        return _elements.size(); // all collapsed
-
-                    toCollapseIndex = (size_t) std::distance(_elements.begin(), uncollapsed);
-                    println(toCollapseIndex);
-
-                    for (size_t i = 0; i < _elements.size(); i++)
+                    if (w._elements.at(i).isCollapsed()) continue;
+                    if (w._elements.at(i).getEntropy() < w._elements.at(out).getEntropy())
                     {
-                        if (_elements.at(i).isCollapsed()) continue;
-                        if (_elements.at(i).getEntropy() < _elements.at(toCollapseIndex).getEntropy())
-                        {
-                            toCollapseIndex = i;
-                        }
+                        out = i;
                     }
                 }
-                break;
-                case STRATEGY::RANDOM:
-                {
-                    toCollapseIndex = wfc::utils::random(0, _elements.size() - 1);
-                }
-                break;
+                return out;
+            };
+
+            switch (strategy)
+            {
+                case STRATEGY::MIN_ENTROPY: toCollapseIndex = MIN_ENTROPY_FN(*this);                       break;
+                case STRATEGY::RANDOM:      toCollapseIndex = wfc::utils::random(0, _elements.size() - 1); break;
             }
 
             return toCollapseIndex;
@@ -337,12 +330,12 @@ class WFC
             return out;
         };
         
-        // Deduplicate patterns and calculate frequencies   //TODO:FIX
+        // Deduplicate patterns
         auto deduplicate = [&](Patterns patterns) -> Patterns
         {
             Patterns out;
-            const float original_size = (float) patterns.size();
-            
+            const float original_size = static_cast<float>(patterns.size());
+
             for (const Pattern& pattern : patterns)
             {
                 Patterns filtered = wfc::utils::filter<Pattern>(
@@ -357,10 +350,23 @@ class WFC
                 out.push_back(filtered[0]); 
             }
             
-            return out;
+            //return out;
+
+            std::sort(out.begin(), out.end(), [](const Pattern& a, const Pattern& b) {
+                return a.frequency < b.frequency;
+            });
+            if (out.size() >= N)
+                return Patterns(out.begin(), out.begin() + N);
+            else
+                return out;
         };
         
-        return deduplicate( permuteAllPatterns( generatePatterns(baseImage, size) ) );
+        Patterns patterns = generatePatterns(baseImage, size);
+        patterns = deduplicate(patterns);
+        patterns = permuteAllPatterns(patterns);
+        patterns = deduplicate(patterns);
+
+        return patterns;
     }
 
     std::vector<Pattern> patterns;
